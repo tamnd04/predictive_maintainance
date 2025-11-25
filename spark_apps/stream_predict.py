@@ -17,13 +17,13 @@ from pyspark.sql.types import (
 # -------------------------------------------------------------------
 spark = (
     SparkSession.builder
-    .appName("BearingToolWearStreamingPrediction_Synapse")
+    .appName("BearingToolWearStreamingPrediction_Postgres")
     .getOrCreate()
 )
 spark.sparkContext.setLogLevel("WARN")
 
 # -------------------------------------------------------------------
-# 2. Load scikit-learn models
+# 2. Load scikit-learn models (trained offline)
 # -------------------------------------------------------------------
 this_file = Path(__file__).resolve()
 repo_root = this_file.parents[1]
@@ -43,25 +43,25 @@ toolwear_feature_cols = toolwear_bundle["feature_cols"]
 toolwear_classes = toolwear_bundle["classes"]
 
 # -------------------------------------------------------------------
-# 3. JDBC connection info for Azure Synapse
+# 3. JDBC connection info for PostgreSQL
 # -------------------------------------------------------------------
-jdbc_url = os.getenv("AZ_SYNAPSE_JDBC_URL")
-jdbc_user = os.getenv("AZ_SYNAPSE_USER")
-jdbc_password = os.getenv("AZ_SYNAPSE_PASSWORD")
+jdbc_url = os.getenv("POSTGRES_JDBC_URL")
+jdbc_user = os.getenv("POSTGRES_USER")
+jdbc_password = os.getenv("POSTGRES_PASSWORD")
 
-bearing_table = os.getenv("AZ_SYNAPSE_BEARING_TABLE", "dbo.BearingPredictions")
-toolwear_table = os.getenv("AZ_SYNAPSE_TOOLWEAR_TABLE", "dbo.ToolwearPredictions")
+bearing_table = os.getenv("POSTGRES_BEARING_TABLE", "public.bearing_predictions")
+toolwear_table = os.getenv("POSTGRES_TOOLWEAR_TABLE", "public.toolwear_predictions")
 
 if not jdbc_url or not jdbc_user or not jdbc_password:
     raise RuntimeError(
-        "AZ_SYNAPSE_JDBC_URL, AZ_SYNAPSE_USER, AZ_SYNAPSE_PASSWORD "
+        "POSTGRES_JDBC_URL, POSTGRES_USER, POSTGRES_PASSWORD "
         "must be set in the environment."
     )
 
 jdbc_props = {
     "user": jdbc_user,
     "password": jdbc_password,
-    "driver": "com.microsoft.sqlserver.jdbc.SQLServerDriver",
+    "driver": "org.postgresql.Driver",
 }
 
 # -------------------------------------------------------------------
@@ -244,7 +244,7 @@ toolwear_features = toolwear_stream.select(
 )
 
 # -------------------------------------------------------------------
-# 9. foreachBatch: run scikit-learn models and write to Synapse
+# 9. foreachBatch: run scikit-learn models and write to Postgres
 # -------------------------------------------------------------------
 
 def predict_bearing_batch(df, batch_id: int):
@@ -263,7 +263,7 @@ def predict_bearing_batch(df, batch_id: int):
     X = pdf[bearing_feature_cols].values
     pdf["rul_prediction"] = bearing_model.predict(X)
 
-    # Select only what we want in the DB
+    # Only columns we want in DB
     pdf_out = pdf[["test_set", "file", "timestamp", "rul_prediction"]].copy()
     pdf_out["batch_id"] = batch_id
 
@@ -296,7 +296,6 @@ def predict_toolwear_batch(df, batch_id: int):
     label_map = {i: name for i, name in enumerate(toolwear_classes)}
     pdf["tool_condition_prediction"] = [label_map[i] for i in pred_int]
 
-    # Select only what we want in the DB
     pdf_out = pdf[["experiment", "timestamp", "tool_condition_prediction", "tool_condition_true"]].copy()
     pdf_out["batch_id"] = batch_id
 

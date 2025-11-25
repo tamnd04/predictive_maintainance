@@ -34,3 +34,17 @@ services:
       - TOOLWEAR_ROW_INTERVAL=0.0         # delay between toolwear rows
       - BEARING_TOPIC=bearing_raw
       - TOOLWEAR_TOPIC=toolwear_raw
+  postgres:
+    image: postgres:18
+    container_name: postgres-1
+    restart: always
+    environment:
+      POSTGRES_USER: maint_user
+      POSTGRES_PASSWORD: 1234
+      POSTGRES_DB: predictive_maintenance
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./postgres-data:/var/lib/postgresql
+    networks:
+      - default   # or whatever network your kafka services use
